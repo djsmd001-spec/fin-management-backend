@@ -13,12 +13,12 @@ const app = express();
 // Connect Database
 connectDB();
 
-// CORS Configuration (Vercel Frontend Allowed)
+// CORS Configuration
 app.use(
   cors({
     origin: [
       "http://localhost:5173", // Local development
-      "https://your-vercel-project.vercel.app" // Replace with your real Vercel URL
+      "https://fin-management-frontend.vercel.app" // Your Vercel frontend
     ],
     credentials: true,
   })
@@ -26,7 +26,7 @@ app.use(
 
 app.use(express.json());
 
-// Health Check Route (Important for Railway)
+// Health Check Route (Railway requirement)
 app.get("/", (req, res) => {
   res.status(200).send("FIN Backend Running 🚀");
 });
@@ -48,7 +48,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: err.message || "Server Error" });
 });
 
-// Railway Compatible PORT
+// Dynamic PORT (Railway compatible)
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
