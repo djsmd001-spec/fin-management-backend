@@ -1,5 +1,11 @@
+
 const express = require("express");
 const router = express.Router();
+
+router.get("/check-forgot", (req, res) => {
+  res.send("Forgot Route Working ✅");
+});
+
 
 const {
   register,
