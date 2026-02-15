@@ -1,26 +1,19 @@
-
 const express = require("express");
 const router = express.Router();
-
-router.get("/check-forgot", (req, res) => {
-  res.send("Forgot Route Working ✅");
-});
-
 
 const {
   register,
   login,
   forgotPassword,
-  verifyOTP,
   resetPassword
 } = require("../controllers/authController");
 
 router.post("/register", register);
 router.post("/login", login);
 
-// 🔥 Forgot Password Routes
+// 🔥 Secure Token Based Reset
 router.post("/forgot-password", forgotPassword);
-router.post("/verify-otp", verifyOTP);
-router.post("/reset-password", resetPassword);
+router.post("/reset-password/:token", resetPassword);
+router.post("/admin-reset-password", adminResetPassword);
 
 module.exports = router;

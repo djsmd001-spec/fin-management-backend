@@ -7,7 +7,6 @@ require("./cron/penaltyCron")();
 const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/db");
-const nodemailer = require("nodemailer");
 
 const app = express();
 
@@ -30,41 +29,6 @@ app.use(express.json());
 // ================= HEALTH CHECK =================
 app.get("/", (req, res) => {
   res.status(200).send("FIN Backend Running 🚀");
-});
-
-// ================= TEST MAIL ROUTE =================
-app.get("/api/test-mail", async (req, res) => {
-  try {
-
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: "gorakhekhande2001@gmail.com",
-      subject: "Railway Test Mail 🚀",
-      text: "Gorakh, Gmail successfully working on Railway!"
-    });
-
-    res.json({
-      success: true,
-      message: "Email Sent Successfully ✅"
-    });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
 });
 
 // ================= ROUTES =================

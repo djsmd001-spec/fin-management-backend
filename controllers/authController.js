@@ -1,7 +1,7 @@
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
+const crypto = require("crypto");
 
 // ================= REGISTER =================
 exports.register = async (req, res) => {
@@ -23,7 +23,6 @@ exports.register = async (req, res) => {
     res.status(201).json({ message: "User Registered Successfully" });
 
   } catch (error) {
-    console.error("Register Error:", error);
     res.status(500).json({ message: "Server Error" });
   }
 };
@@ -58,7 +57,6 @@ exports.login = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Login Error:", error);
     res.status(500).json({ message: "Server Error" });
   }
 };
@@ -68,80 +66,41 @@ exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      return res.status(500).json({
-        message: "Email service not configured properly"
-      });
-    }
-
     const user = await User.findOne({ email });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.json({
+        message: "If this email exists, reset link generated."
+      });
     }
 
-    // Generate 6 digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const today = new Date();
 
-    user.resetOTP = otp;
-    user.resetOTPExpire = Date.now() + 10 * 60 * 1000;
+    // 🔥 Daily limit check
+    if (
+      user.lastForgotRequest &&
+      user.lastForgotRequest.toDateString() === today.toDateString()
+    ) {
+      return res.status(429).json({
+        message:
+          "You already requested password reset today. Contact admin."
+      });
+    }
+
+    const token = crypto.randomBytes(32).toString("hex");
+
+    user.resetToken = token;
+    user.resetTokenExpiry = Date.now() + 10 * 60 * 1000;
+    user.lastForgotRequest = today;
+
     await user.save();
 
-    // Gmail Secure Transporter
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
+    res.json({
+      message: "Reset link generated successfully",
+      resetLink: `https://fin-management-frontend.vercel.app/reset-password/${token}`
     });
-
-    await transporter.sendMail({
-      from: `"FIN App Support" <${process.env.EMAIL_USER}>`,
-      to: user.email,
-      subject: "Password Reset OTP",
-      html: `
-        <div style="font-family: Arial; text-align: center;">
-          <h2>Password Reset Request</h2>
-          <p>Your OTP Code is:</p>
-          <h1 style="color: #4e73df;">${otp}</h1>
-          <p>This OTP is valid for 10 minutes.</p>
-        </div>
-      `
-    });
-
-    res.json({ message: "OTP sent to email successfully" });
 
   } catch (error) {
-    console.error("Forgot Password Error:", error);
-    res.status(500).json({
-      message: "Failed to send OTP",
-      error: error.message
-    });
-  }
-};
-
-// ================= VERIFY OTP =================
-exports.verifyOTP = async (req, res) => {
-  try {
-    const { email, otp } = req.body;
-
-    const user = await User.findOne({ email });
-
-    if (
-      !user ||
-      user.resetOTP !== otp ||
-      user.resetOTPExpire < Date.now()
-    ) {
-      return res.status(400).json({ message: "Invalid or Expired OTP" });
-    }
-
-    res.json({ message: "OTP Verified Successfully" });
-
-  } catch (error) {
-    console.error("Verify OTP Error:", error);
     res.status(500).json({ message: "Server Error" });
   }
 };
@@ -149,30 +108,77 @@ exports.verifyOTP = async (req, res) => {
 // ================= RESET PASSWORD =================
 exports.resetPassword = async (req, res) => {
   try {
-    const { email, otp, newPassword } = req.body;
+    const { token } = req.params;
+    const { newPassword } = req.body;
 
-    const user = await User.findOne({ email });
+    // 🔐 Strong password validation
+    const strongPasswordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
-    if (
-      !user ||
-      user.resetOTP !== otp ||
-      user.resetOTPExpire < Date.now()
-    ) {
-      return res.status(400).json({ message: "Invalid or Expired OTP" });
+    if (!strongPasswordRegex.test(newPassword)) {
+      return res.status(400).json({
+        message:
+          "Password must be 8+ chars with uppercase, lowercase & number"
+      });
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const user = await User.findOne({
+      resetToken: token,
+      resetTokenExpiry: { $gt: Date.now() }
+    });
 
-    user.password = hashedPassword;
-    user.resetOTP = undefined;
-    user.resetOTPExpire = undefined;
+    if (!user)
+      return res.status(400).json({
+        message: "Invalid or Expired Token"
+      });
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.resetToken = undefined;
+    user.resetTokenExpiry = undefined;
+
+    // 🔥 Auto logout all sessions
+    user.passwordChangedAt = Date.now();
 
     await user.save();
 
-    res.json({ message: "Password Reset Successfully" });
+    res.json({ message: "Password Reset Successfully ✅" });
 
   } catch (error) {
-    console.error("Reset Password Error:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+// ================= ADMIN RESET (BYPASS DAILY LIMIT) =================
+exports.adminResetPassword = async (req, res) => {
+  try {
+    const { userId, newPassword } = req.body;
+
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const strongPasswordRegex =
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+
+    if (!strongPasswordRegex.test(newPassword)) {
+      return res.status(400).json({
+        message:
+          "Password must be 8+ chars with uppercase, lowercase & number"
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user)
+      return res.status(404).json({ message: "User not found" });
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.passwordChangedAt = Date.now();
+
+    await user.save();
+
+    res.json({ message: "Password reset by admin successfully ✅" });
+
+  } catch (error) {
     res.status(500).json({ message: "Server Error" });
   }
 };
