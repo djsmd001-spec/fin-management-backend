@@ -6,16 +6,33 @@ const {
   login,
   forgotPassword,
   resetPassword,
-  adminResetPassword   // 🔥 ADD THIS LINE
+  adminResetPassword
 } = require("../controllers/authController");
 
+// 🔐 Import Middleware
+const { protect, adminOnly } = require("../middleware/authMiddleware");
+
+// ================= AUTH ROUTES =================
+
+// Register
 router.post("/register", register);
+
+// Login
 router.post("/login", login);
 
+// User Forgot Password (Token Based)
 router.post("/forgot-password", forgotPassword);
+
+// User Reset Password via Token
 router.post("/reset-password/:token", resetPassword);
 
-// 🔥 Admin Bypass Reset
-router.post("/admin-reset-password", adminResetPassword);
+// ================= ADMIN RESET (SECURE) =================
+// Only logged-in admin can reset any user password
+router.post(
+  "/admin-reset-password",
+  protect,       // Verify JWT
+  adminOnly,     // Check role === admin
+  adminResetPassword
+);
 
 module.exports = router;
