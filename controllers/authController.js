@@ -23,7 +23,8 @@ exports.register = async (req, res) => {
     res.status(201).json({ message: "User Registered Successfully" });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Register Error:", error);
+    res.status(500).json({ message: "Server Error" });
   }
 };
 
@@ -57,7 +58,8 @@ exports.login = async (req, res) => {
     });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Login Error:", error);
+    res.status(500).json({ message: "Server Error" });
   }
 };
 
@@ -66,19 +68,30 @@ exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
-    const user = await User.findOne({ email });
-    if (!user)
-      return res.status(404).json({ message: "User not found" });
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      return res.status(500).json({
+        message: "Email service not configured properly"
+      });
+    }
 
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Generate 6 digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     user.resetOTP = otp;
-    user.resetOTPExpire = Date.now() + 10 * 60 * 1000; // 10 min
-
+    user.resetOTPExpire = Date.now() + 10 * 60 * 1000;
     await user.save();
 
+    // Gmail Secure Transporter
     const transporter = nodemailer.createTransport({
-      service: "gmail",
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
@@ -86,21 +99,27 @@ exports.forgotPassword = async (req, res) => {
     });
 
     await transporter.sendMail({
-      from: process.env.EMAIL_USER,
+      from: `"FIN App Support" <${process.env.EMAIL_USER}>`,
       to: user.email,
       subject: "Password Reset OTP",
       html: `
-        <h2>Password Reset Request</h2>
-        <p>Your OTP is:</p>
-        <h1>${otp}</h1>
-        <p>This OTP is valid for 10 minutes.</p>
+        <div style="font-family: Arial; text-align: center;">
+          <h2>Password Reset Request</h2>
+          <p>Your OTP Code is:</p>
+          <h1 style="color: #4e73df;">${otp}</h1>
+          <p>This OTP is valid for 10 minutes.</p>
+        </div>
       `
     });
 
     res.json({ message: "OTP sent to email successfully" });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Forgot Password Error:", error);
+    res.status(500).json({
+      message: "Failed to send OTP",
+      error: error.message
+    });
   }
 };
 
@@ -122,7 +141,8 @@ exports.verifyOTP = async (req, res) => {
     res.json({ message: "OTP Verified Successfully" });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Verify OTP Error:", error);
+    res.status(500).json({ message: "Server Error" });
   }
 };
 
@@ -152,6 +172,7 @@ exports.resetPassword = async (req, res) => {
     res.json({ message: "Password Reset Successfully" });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Reset Password Error:", error);
+    res.status(500).json({ message: "Server Error" });
   }
 };
